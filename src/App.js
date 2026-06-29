@@ -9,16 +9,20 @@ const STORE_COLORS = {
 const SEED = [
   { name: "Acelga", category: "Frutas & Legumes" }, { name: "Clementinas", category: "Frutas & Legumes" },
   { name: "Cogumelos", category: "Frutas & Legumes" }, { name: "Melão", category: "Frutas & Legumes" },
-  { name: "Pepino", category: "Frutas & Legumes" }, { name: "Nectarina", category: "Frutas & Legumes" },
-  { name: "Mandioca", category: "Frutas & Legumes" }, { name: "Pão de forma", category: "Padaria" },
+  { name: "Pepino", category: "Frutas & Legumes" }, { name: "Pão de forma", category: "Padaria" },
   { name: "Tortilhas", category: "Padaria" }, { name: "Frango (Peito)", category: "Carnes & Peixe" },
   { name: "Frango (Inteiro)", category: "Carnes & Peixe" }, { name: "Frango (Coxas)", category: "Carnes & Peixe" },
-  { name: "Porco (Bifana)", category: "Carnes & Peixe" }, { name: "Porco (Carne Picada)", category: "Carnes & Peixe" },
-  { name: "Misto (Carne Moída)", category: "Carnes & Peixe" }, { name: "Boi (Carne Moída)", category: "Carnes & Peixe" },
-  { name: "Pizza", category: "Congelados" }, { name: "Leite (Meio-gordo)", category: "Lacticínios" },
-  { name: "Manteiga (c/ Sal)", category: "Lacticínios" }, { name: "Fio Dentário", category: "Higiene" },
+  { name: "Porco (Bifana)", category: "Carnes & Peixe" }, { name: "Misto (Carne Moída)", category: "Carnes & Peixe" },
+  { name: "Boi (Carne Moída)", category: "Carnes & Peixe" }, { name: "Pizza", category: "Congelados" },
   { name: "Bolacha água e sal", category: "Conservas" }, { name: "Chá", category: "Conservas" },
-  { name: "Sumo de frutas", category: "Conservas" }, { name: "Flocos de Milho", category: "Conservas" },
+  { name: "Sumo de frutas", category: "Conservas" },
+  { name: "Mandioca", category: "Frutas & Legumes" },
+  { name: "Nectarina", category: "Frutas & Legumes" },
+  { name: "Leite (Meio-gordo)", category: "Lacticínios" },
+  { name: "Manteiga (c/ Sal)", category: "Lacticínios" },
+  { name: "Fio Dentário", category: "Higiene" },
+  { name: "Flocos de Milho", category: "Conservas" },
+  { name: "Porco (Carne Picada)", category: "Carnes & Peixe" },
 ];
 
 const storage = {
@@ -62,7 +66,7 @@ export default function App() {
   const [newCategory, setNewCategory] = useState("");
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [logEntry, setLogEntry] = useState({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] });
-  const [editingEntry, setEditingEntry] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null); // { idx, price, weight, supermarket, date }
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState(null);
   const [filterStore, setFilterStore] = useState("all");
@@ -73,6 +77,8 @@ export default function App() {
   const [highlightId, setHighlightId] = useState(null);
   const itemRefs = useRef({});
 
+  const [deletedIds, setDeletedIds] = useState(new Set());
+  const [showMenu, setShowMenu] = useState(false);
   const persist = (key, val) => storage.set(key, JSON.stringify(val));
 
   useEffect(() => {
@@ -80,6 +86,10 @@ export default function App() {
     const i = storage.get("gt:items");
     const h = storage.get("gt:history");
     const sl = storage.get("gt:shopping");
+    const dl = storage.get("gt:deleted");
+    const deletedSet = dl ? new Set(JSON.parse(dl.value)) : new Set();
+    setDeletedIds(deletedSet);
+
     if (c) setCategories(JSON.parse(c.value));
     let loaded = i ? JSON.parse(i.value) : {};
     const renames = {
@@ -94,8 +104,8 @@ export default function App() {
     }
     const existing = Object.values(loaded).map(x => x.name.toLowerCase());
     for (const p of SEED) {
-      if (!existing.includes(p.name.toLowerCase())) {
-        const id = `seed-${p.name.toLowerCase().replace(/\s/g, "-").replace(/[()]/g, "")}`;
+      const id = `seed-${p.name.toLowerCase().replace(/\s/g, "-").replace(/[()]/g, "")}`;
+      if (!existing.includes(p.name.toLowerCase()) && !deletedSet.has(id)) {
         loaded[id] = { id, name: p.name, category: p.category };
         changed = true;
       }
@@ -114,9 +124,12 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  // Scroll to highlighted item
   useEffect(() => {
     if (highlightId && itemRefs.current[highlightId]) {
-      setTimeout(() => { itemRefs.current[highlightId]?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 100);
+      setTimeout(() => {
+        itemRefs.current[highlightId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
       const t = setTimeout(() => setHighlightId(null), 2000);
       return () => clearTimeout(t);
     }
@@ -193,6 +206,10 @@ export default function App() {
     setItems(restI); persist("gt:items", restI);
     setHistory(restH); persist("gt:history", restH);
     setShoppingList(restS); persist("gt:shopping", restS);
+    // remember deleted id so SEED never re-adds it
+    const updated = new Set([...deletedIds, id]);
+    setDeletedIds(updated);
+    persist("gt:deleted", [...updated]);
     setView("list"); showToast("Item removido.");
   };
 
@@ -203,9 +220,17 @@ export default function App() {
   };
 
   const toggleDone = (id) => {
+    // when marked as done, remove from list entirely
     const cur = shoppingList[id] || { pinned: true, done: false };
-    const updated = { ...shoppingList, [id]: { ...cur, done: !cur.done } };
-    setShoppingList(updated); persist("gt:shopping", updated);
+    if (!cur.done) {
+      // mark done then remove after short delay for visual feedback
+      const marked = { ...shoppingList, [id]: { ...cur, done: true } };
+      setShoppingList(marked); persist("gt:shopping", marked);
+      setTimeout(() => {
+        const removed = { ...marked, [id]: { pinned: false, done: false } };
+        setShoppingList(removed); persist("gt:shopping", removed);
+      }, 800);
+    }
   };
 
   const clearDone = () => {
@@ -250,13 +275,49 @@ export default function App() {
 
   const allItems = Object.values(items);
   const filteredItems = allItems.filter(it => it.name.toLowerCase().includes(search.toLowerCase()) && (!filterCat || it.category === filterCat));
-  const groupedItems = categories.reduce((acc, cat) => { const ci = filteredItems.filter(it => it.category === cat); if (ci.length) acc[cat] = ci; return acc; }, {});
+  const groupedItems = categories.reduce((acc, cat) => {
+    const ci = filteredItems.filter(it => it.category === cat);
+    if (ci.length) acc[cat] = ci;
+    return acc;
+  }, {});
   const pinnedItems = allItems.filter(it => shoppingList[it.id]?.pinned);
   const shopItems = allItems.filter(it => !shopFilterCat || it.category === shopFilterCat);
-  const shopGrouped = categories.reduce((acc, cat) => { const ci = shopItems.filter(it => it.category === cat); if (ci.length) acc[cat] = ci; return acc; }, {});
+  const shopGrouped = categories.reduce((acc, cat) => {
+    const ci = shopItems.filter(it => it.category === cat);
+    if (ci.length) acc[cat] = ci;
+    return acc;
+  }, {});
   const doneCount = pinnedItems.filter(it => shoppingList[it.id]?.done).length;
 
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "system-ui", color: "#888" }}>A carregar...</div>;
+
+  // ── EDIT ENTRY ──
+  if (view === "edit-entry" && editingEntry && selectedItem) return (
+    <div style={s.app}>
+      <div style={s.header}>
+        <button style={s.backBtn} onClick={() => { setEditingEntry(null); setView("history"); }}>← Voltar</button>
+        <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>Editar registo</div>
+        <div style={{ fontSize: 12, opacity: 0.8 }}>{selectedItem.name}</div>
+      </div>
+      <div style={{ padding: 16 }}>
+        <label style={s.label}>Preço (€)</label>
+        <input style={s.input} type="number" step="0.01" min="0" placeholder="ex: 1.99" value={editingEntry.price} onChange={e => setEditingEntry({ ...editingEntry, price: e.target.value })} autoFocus />
+        <label style={s.label}>Peso / Quantidade <span style={{ fontWeight: 400, color: "#aaa" }}>(ex: 1kg, 500g, 1L, 6un)</span></label>
+        <input style={s.input} type="text" placeholder="ex: 1kg" value={editingEntry.weight} onChange={e => setEditingEntry({ ...editingEntry, weight: e.target.value })} />
+        <label style={s.label}>Supermercado</label>
+        <select style={s.input} value={editingEntry.supermarket} onChange={e => setEditingEntry({ ...editingEntry, supermarket: e.target.value })}>
+          {SUPERMARKETS.map(st => <option key={st}>{st}</option>)}
+        </select>
+        <label style={s.label}>Data</label>
+        <input style={s.input} type="date" value={editingEntry.date} onChange={e => setEditingEntry({ ...editingEntry, date: e.target.value })} />
+        <div style={s.row}>
+          <button style={{ ...s.btn, ...s.btnSecondary, flex: 1 }} onClick={() => { setEditingEntry(null); setView("history"); }}>Cancelar</button>
+          <button style={{ ...s.btn, ...s.btnPrimary, flex: 1 }} onClick={saveEditEntry}>Guardar</button>
+        </div>
+      </div>
+      {toast && <div style={s.toast}>{toast}</div>}
+    </div>
+  );
 
   // ── EDIT ITEM ──
   if (view === "edit-item" && editItem) return (
@@ -326,46 +387,43 @@ export default function App() {
           {h.length === 0
             ? <div style={{ textAlign: "center", color: "#aaa", marginTop: 32 }}>Sem registos{filterStore !== "all" ? ` para ${filterStore}` : ""}.</div>
             : h.map((e, i) => (
-              <div key={i} style={{ ...s.card, padding: "10px 14px" }}>
-                {editingEntry?.idx === i ? (
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: "#2a9d8f", marginBottom: 8 }}>Editar registo</div>
-                    <label style={s.label}>Preço (€)</label>
-                    <input style={s.input} type="number" step="0.01" min="0" value={editingEntry.price} onChange={ev => setEditingEntry({ ...editingEntry, price: ev.target.value })} autoFocus />
-                    <label style={s.label}>Peso / Quantidade</label>
-                    <input style={s.input} type="text" placeholder="ex: 1kg" value={editingEntry.weight} onChange={ev => setEditingEntry({ ...editingEntry, weight: ev.target.value })} />
-                    <label style={s.label}>Supermercado</label>
-                    <select style={s.input} value={editingEntry.supermarket} onChange={ev => setEditingEntry({ ...editingEntry, supermarket: ev.target.value })}>
-                      {SUPERMARKETS.map(st => <option key={st}>{st}</option>)}
-                    </select>
-                    <label style={s.label}>Data</label>
-                    <input style={s.input} type="date" value={editingEntry.date} onChange={ev => setEditingEntry({ ...editingEntry, date: ev.target.value })} />
-                    <div style={s.row}>
-                      <button style={{ ...s.btn, ...s.btnSecondary, flex: 1 }} onClick={() => setEditingEntry(null)}>Cancelar</button>
-                      <button style={{ ...s.btn, ...s.btnPrimary, flex: 1 }} onClick={saveEditEntry}>Guardar</button>
-                    </div>
+              <div key={i} style={{ ...s.card, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px" }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#888" }}>{e.date}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                    <StoreBadge store={e.supermarket} />
+                    {e.weight && <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>⚖️ {e.weight}</span>}
                   </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div>
-                      <div style={{ fontSize: 12, color: "#888" }}>{e.date}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
-                        <StoreBadge store={e.supermarket} />
-                        {e.weight && <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>⚖️ {e.weight}</span>}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 17 }}>{e.price.toFixed(2)} €</span>
-                      <button onClick={() => setEditingEntry({ idx: i, price: e.price, weight: e.weight || "", supermarket: e.supermarket, date: e.date })}
-                        style={{ ...s.btnGhost, color: "#2a9d8f", fontSize: 15 }} title="Editar">✏️</button>
-                      <button onClick={() => setConfirmDelete({ itemId: selectedItem.id, idx: i })}
-                        style={{ ...s.btnGhost, color: "#e63946", fontSize: 15 }} title="Apagar">🗑</button>
-                    </div>
-                  </div>
-                )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 700, fontSize: 17 }}>{e.price.toFixed(2)} €</span>
+                  <button onClick={() => setEditingEntry({ idx: i, price: e.price, weight: e.weight || "", supermarket: e.supermarket, date: e.date })}
+                    style={{ ...s.btnGhost, color: "#2a9d8f", fontSize: 15 }} title="Editar">✏️</button>
+                  <button onClick={() => setConfirmDelete({ itemId: selectedItem.id, idx: i })}
+                    style={{ ...s.btnGhost, color: "#e63946", fontSize: 15 }} title="Apagar">🗑</button>
+                </div>
               </div>
             ))
           }
+          {editingEntry && (
+            <div style={{ background: "#fff", borderRadius: 12, padding: 16, marginTop: 8, boxShadow: "0 2px 12px rgba(0,0,0,0.12)" }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: "#2a9d8f" }}>Editar registo</div>
+              <label style={s.label}>Preço (€)</label>
+              <input style={s.input} type="number" step="0.01" min="0" value={editingEntry.price} onChange={e => setEditingEntry({ ...editingEntry, price: e.target.value })} autoFocus />
+              <label style={s.label}>Peso / Quantidade</label>
+              <input style={s.input} type="text" placeholder="ex: 1kg" value={editingEntry.weight} onChange={e => setEditingEntry({ ...editingEntry, weight: e.target.value })} />
+              <label style={s.label}>Supermercado</label>
+              <select style={s.input} value={editingEntry.supermarket} onChange={e => setEditingEntry({ ...editingEntry, supermarket: e.target.value })}>
+                {SUPERMARKETS.map(st => <option key={st}>{st}</option>)}
+              </select>
+              <label style={s.label}>Data</label>
+              <input style={s.input} type="date" value={editingEntry.date} onChange={e => setEditingEntry({ ...editingEntry, date: e.target.value })} />
+              <div style={s.row}>
+                <button style={{ ...s.btn, ...s.btnSecondary, flex: 1 }} onClick={() => setEditingEntry(null)}>Cancelar</button>
+                <button style={{ ...s.btn, ...s.btnPrimary, flex: 1 }} onClick={saveEditEntry}>Guardar</button>
+              </div>
+            </div>
+          )}
           <button style={{ ...s.btn, ...s.btnPrimary, width: "100%", marginTop: 8 }}
             onClick={() => { setLogEntry({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] }); setView("log-price"); }}>
             + Registar preço
@@ -454,37 +512,120 @@ export default function App() {
       <div style={s.header}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 19 }}>🛒 Grocery Tracker</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <svg width="36" height="36" viewBox="0 0 90 90" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="45" cy="45" r="42" fill="#1f7a6e"/>
+                <path d="M18 28 L25 28 L33 58 L62 58" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M25 28 L30 48 L62 48 L67 28 Z" fill="#fff" opacity="0.2"/>
+                <line x1="30" y1="48" x2="62" y2="48" stroke="#fff" stroke-width="3"/>
+                <circle cx="36" cy="64" r="4" fill="#fff"/>
+                <circle cx="57" cy="64" r="4" fill="#fff"/>
+                <text x="47" y="43" textAnchor="middle" fill="#fff" fontSize="14" fontFamily="system-ui" fontWeight="900">€</text>
+              </svg>
+              <div style={{ fontWeight: 700, fontSize: 19 }}>Comprinha</div>
+            </div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>{allItems.length} produtos · {Object.values(history).reduce((a, h) => a + h.length, 0)} registos</div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={exportData} title="Exportar backup" style={{ ...s.btn, padding: "6px 10px", fontSize: 13, background: "rgba(255,255,255,0.2)", color: "#fff" }}>⬇️</button>
-            <label title="Importar backup" style={{ ...s.btn, padding: "6px 10px", fontSize: 13, background: "rgba(255,255,255,0.2)", color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
-              ⬆️<input type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
-            </label>
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setShowMenu(!showMenu)} title="Mais opções" style={{ ...s.btn, padding: "7px 9px", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="24" cy="10" r="3.5" fill="#fff"/>
+                <circle cx="24" cy="24" r="3.5" fill="#fff"/>
+                <circle cx="24" cy="38" r="3.5" fill="#fff"/>
+              </svg>
+            </button>
+            {showMenu && (
+              <>
+                <div onClick={() => setShowMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "#fff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.18)", zIndex: 31, minWidth: 200, overflow: "hidden" }}>
+                  <button onClick={() => { exportData(); setShowMenu(false); }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                    <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                      <rect x="8" y="8" width="32" height="32" rx="3" fill="none" stroke="#2a9d8f" strokeWidth="2.5" strokeLinejoin="round"/>
+                      <path d="M14 8 L14 18 L30 18 L30 8" fill="none" stroke="#2a9d8f" strokeWidth="2.5" strokeLinejoin="round"/>
+                      <rect x="18" y="26" width="12" height="10" rx="1" fill="none" stroke="#2a9d8f" strokeWidth="2.2"/>
+                    </svg>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#222" }}>Exportar backup</div>
+                      <div style={{ fontSize: 12, color: "#888" }}>Guardar os dados num ficheiro</div>
+                    </div>
+                  </button>
+                  <div style={{ height: 1, background: "#eee" }} />
+                  <label style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer", textAlign: "left" }}>
+                    <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                      <line x1="24" y1="32" x2="24" y2="10" stroke="#2a9d8f" strokeWidth="2.8" strokeLinecap="round"/>
+                      <path d="M15 19 L24 10 L33 19" fill="none" stroke="#2a9d8f" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M10 32 L10 36 Q10 38 12 38 L36 38 Q38 38 38 36 L38 32" fill="none" stroke="#2a9d8f" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#222" }}>Importar backup</div>
+                      <div style={{ fontSize: 12, color: "#888" }}>Restaurar dados de um ficheiro</div>
+                    </div>
+                    <input type="file" accept=".json" onChange={e => { importData(e); setShowMenu(false); }} style={{ display: "none" }} />
+                  </label>
+                </div>
+              </>
+            )}
           </div>
         </div>
-        {tab === "list" && (
-          <input style={{ ...s.input, marginTop: 10, marginBottom: 0, background: "rgba(255,255,255,0.15)", border: "none", color: "#fff" }}
-            placeholder="🔍 Pesquisar produto..." value={search} onChange={e => setSearch(e.target.value)} />
-        )}
+        <style>{`
+          .search-input::placeholder { color: #1a6b5f; font-style: italic; font-weight: 700; opacity: 0.85; font-size: 13px; }
+        `}</style>
+        <input
+          className="search-input"
+          style={{ ...s.input, marginTop: 10, marginBottom: 0, background: "rgba(210,240,235,0.85)", border: "none", color: "#1a6b5f", fontWeight: 700 }}
+          placeholder="Pesquisar Produtos..."
+          value={search}
+          onChange={e => {
+            setSearch(e.target.value);
+            if (e.target.value && tab === "shopping") setTab("list");
+          }}
+        />
       </div>
 
       <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #eee" }}>
-        <button style={s.tab(tab === "list")} onClick={() => setTab("list")}>📋 Produtos</button>
+        <button style={s.tab(tab === "list")} onClick={() => setTab("list")}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <path d="M24 6 Q38 12 36 26 Q32 38 24 38 Q16 38 12 26 Q10 12 24 6Z" fill="none" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2.8"/>
+              <line x1="24" y1="8" x2="24" y2="36" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2.2"/>
+              <line x1="17" y1="20" x2="24" y2="16" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2"/>
+              <line x1="13" y1="28" x2="24" y2="22" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2"/>
+              <line x1="31" y1="20" x2="24" y2="16" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2"/>
+              <line x1="35" y1="28" x2="24" y2="22" stroke={tab === "list" ? "#2a9d8f" : "#888"} strokeWidth="2"/>
+            </svg>
+            Produtos
+          </span>
+        </button>
         <button style={s.tab(tab === "shopping")} onClick={() => setTab("shopping")}>
-          🛍️ Lista{pinnedItems.length > 0 ? ` (${pinnedItems.length})` : ""}
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 14 L15 19 L22 11" fill="none" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="26" y1="15" x2="38" y2="15" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.2" strokeLinecap="round"/>
+              <path d="M10 24 L15 29 L22 21" fill="none" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="26" y1="25" x2="38" y2="25" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.2" strokeLinecap="round"/>
+              <path d="M10 34 L15 39 L22 31" fill="none" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="26" y1="35" x2="34" y2="35" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.2" strokeLinecap="round"/>
+            </svg>
+            Lista{pinnedItems.length > 0 ? ` (${pinnedItems.length})` : ""}
+          </span>
         </button>
       </div>
 
+      {/* ── PRODUTOS TAB ── */}
       {tab === "list" && (
         <div style={{ padding: "0 16px" }}>
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 0 2px" }}>
-            <button onClick={() => setFilterCat(null)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: !filterCat ? "#2a9d8f" : "#f1f3f5", color: !filterCat ? "#fff" : "#444" }}>Todas</button>
-            {categories.filter(c => filteredItems.some(i => i.category === c) || c === filterCat).map(c => (
-              <button key={c} onClick={() => setFilterCat(filterCat === c ? null : c)}
-                style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: filterCat === c ? "#2a9d8f" : "#f1f3f5", color: filterCat === c ? "#fff" : "#444" }}>{c}</button>
-            ))}
+          <div style={{ position: "relative" }}>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 28px 2px 0", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+              <button onClick={() => setFilterCat(null)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: !filterCat ? "#2a9d8f" : "#f1f3f5", color: !filterCat ? "#fff" : "#444" }}>Todas</button>
+              {categories.filter(c => filteredItems.some(i => i.category === c) || c === filterCat).map(c => (
+                <button key={c} onClick={() => setFilterCat(filterCat === c ? null : c)}
+                  style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: filterCat === c ? "#2a9d8f" : "#f1f3f5", color: filterCat === c ? "#fff" : "#444" }}>{c}</button>
+              ))}
+            </div>
+            <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, display: "flex", alignItems: "center", background: "linear-gradient(to right, transparent, #f8f9fa 50%)", paddingLeft: 24, paddingRight: 4, pointerEvents: "none" }}>
+              <span style={{ color: "#999", fontSize: 22, fontWeight: 300, lineHeight: 1 }}>›</span>
+            </div>
           </div>
           {Object.keys(items).length === 0 ? (
             <div style={{ textAlign: "center", color: "#aaa", marginTop: 60 }}>
@@ -521,7 +662,11 @@ export default function App() {
                     </div>
                     <button onClick={e => { e.stopPropagation(); togglePinned(item.id); }}
                       title={pinned ? "Remover da lista" : "Adicionar à lista de compras"}
-                      style={{ ...s.btnGhost, fontSize: 22, color: pinned ? "#2a9d8f" : "#ccc", transition: "color .15s", flexShrink: 0 }}>🛒</button>
+                      style={{ background: pinned ? "#2a9d8f" : "#d2f0eb", border: "none", borderRadius: 8, padding: "6px 8px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background .15s" }}>
+                      <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 24 L18 32 L38 12" fill="none" stroke={pinned ? "#fff" : "#1a6b5f"} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
                   </div>
                 );
               })}
@@ -530,69 +675,59 @@ export default function App() {
         </div>
       )}
 
+      {/* ── LISTA DE COMPRAS TAB ── */}
       {tab === "shopping" && (
         <div style={{ padding: "0 16px" }}>
-          {pinnedItems.length === 0 ? (
+          <div style={{ position: "relative" }}>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 28px 2px 0", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+              <button onClick={() => setShopFilterCat(null)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: !shopFilterCat ? "#2a9d8f" : "#f1f3f5", color: !shopFilterCat ? "#fff" : "#444" }}>Todas</button>
+              {categories.filter(c => pinnedItems.some(i => i.category === c) || c === shopFilterCat).map(c => (
+                <button key={c} onClick={() => setShopFilterCat(shopFilterCat === c ? null : c)}
+                  style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: shopFilterCat === c ? "#2a9d8f" : "#f1f3f5", color: shopFilterCat === c ? "#fff" : "#444" }}>{c}</button>
+              ))}
+            </div>
+            <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, display: "flex", alignItems: "center", background: "linear-gradient(to right, transparent, #f8f9fa 50%)", paddingLeft: 24, paddingRight: 4, pointerEvents: "none" }}>
+              <span style={{ color: "#999", fontSize: 22, fontWeight: 300, lineHeight: 1 }}>›</span>
+            </div>
+          </div>
+          {pinnedItems.filter(it => !shopFilterCat || it.category === shopFilterCat).length === 0 ? (
             <div style={{ textAlign: "center", color: "#bbb", fontSize: 14, marginTop: 40, lineHeight: 1.8 }}>
               <div style={{ fontSize: 40, marginBottom: 8 }}>🛒</div>
               <div>A lista está vazia.</div>
-              <div style={{ fontSize: 13 }}>Toca em 🛒 num produto para o adicionar.</div>
+              <div style={{ fontSize: 13 }}>Toca no ✓ num produto para o adicionar.</div>
             </div>
           ) : (
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 6px" }}>
-                <span style={{ ...s.catLabel, margin: 0 }}>✅ Na lista ({pinnedItems.length})</span>
-                {doneCount > 0 && <button style={{ ...s.btn, ...s.btnSecondary, padding: "3px 10px", fontSize: 12 }} onClick={clearDone}>Desmarcar todos</button>}
+                <span style={{ ...s.catLabel, margin: 0 }}>Na lista ({pinnedItems.length})</span>
               </div>
-              {pinnedItems.map(item => {
+              {pinnedItems.filter(it => !shopFilterCat || it.category === shopFilterCat).map(item => {
                 const done = !!shoppingList[item.id]?.done;
                 const last = getLastEntry(item.id);
                 return (
-                  <div key={item.id} style={{ ...s.card, display: "flex", alignItems: "center", gap: 12, opacity: done ? 0.45 : 1, transition: "opacity .2s" }}>
-                    <div onClick={() => toggleDone(item.id)} style={{ width: 24, height: 24, borderRadius: 6, border: done ? "none" : "2px solid #ccc", background: done ? "#2a9d8f" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", transition: "all .15s" }}>
-                      {done && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}
-                    </div>
+                  <div key={item.id} onClick={() => toggleDone(item.id)}
+                    style={{ ...s.card, display: "flex", alignItems: "center", gap: 8, opacity: done ? 0.35 : 1, transition: "opacity .3s", cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 15, textDecoration: done ? "line-through" : "none" }}>{item.name}</div>
-                      {last && (
-                        <div style={{ fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                          {last.price.toFixed(2)} € · <StoreBadge store={last.supermarket} />{last.weight ? ` · ${last.weight}` : ""}
+                      {last ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                          <StoreBadge store={last.supermarket} />
+                          <span style={{ fontSize: 12, color: "#888" }}>{last.date}</span>
+                          {last.weight && <span style={{ fontSize: 12, color: "#666" }}>· {last.weight}</span>}
                         </div>
-                      )}
+                      ) : <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>Sem registos</div>}
                     </div>
-                    <button onClick={() => togglePinned(item.id)} title="Remover da lista" style={{ ...s.btnGhost, color: "#e63946", fontSize: 18, flexShrink: 0 }}>✕</button>
+                    <div style={{ textAlign: "right" }}>
+                      {last && <div style={{ fontWeight: 700, fontSize: 16 }}>{last.price.toFixed(2)} €</div>}
+                      <div style={{ fontSize: 11, color: "#aaa" }}>&nbsp;</div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); togglePinned(item.id); }} title="Remover da lista"
+                      style={{ background: "#fbd5d8", border: "none", borderRadius: 8, color: "#c0303d", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "4px 9px", flexShrink: 0 }}>✕</button>
                   </div>
                 );
               })}
             </div>
           )}
-          <div style={{ marginTop: 20 }}>
-            <div style={{ ...s.catLabel, color: "#aaa" }}>TODOS OS PRODUTOS</div>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6 }}>
-              <button onClick={() => setShopFilterCat(null)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: !shopFilterCat ? "#2a9d8f" : "#f1f3f5", color: !shopFilterCat ? "#fff" : "#444" }}>Todas</button>
-              {categories.filter(c => allItems.some(i => i.category === c)).map(c => (
-                <button key={c} onClick={() => setShopFilterCat(shopFilterCat === c ? null : c)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: shopFilterCat === c ? "#2a9d8f" : "#f1f3f5", color: shopFilterCat === c ? "#fff" : "#444" }}>{c}</button>
-              ))}
-            </div>
-            {Object.entries(shopGrouped).map(([cat, catItems]) => (
-              <div key={cat}>
-                <div style={s.catLabel}>{cat}</div>
-                {catItems.map(item => {
-                  const pinned = !!shoppingList[item.id]?.pinned;
-                  const last = getLastEntry(item.id);
-                  return (
-                    <div key={item.id} style={{ ...s.card, display: "flex", alignItems: "center", gap: 12, opacity: pinned ? 0.4 : 1 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 15 }}>{item.name}</div>
-                        {last && <div style={{ fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>{last.price.toFixed(2)} € · <StoreBadge store={last.supermarket} /></div>}
-                      </div>
-                      <button onClick={() => togglePinned(item.id)} style={{ ...s.btnGhost, fontSize: 22, color: pinned ? "#2a9d8f" : "#ccc", transition: "color .15s", flexShrink: 0 }} title={pinned ? "Já na lista" : "Adicionar à lista"}>🛒</button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const SUPERMARKETS = ["Continente", "Pingo Doce", "Auchan", "Mercadona", "Lidl", "Meu Super", "Outros"];
 const DEFAULT_CATEGORIES = ["Lacticínios", "Frutas & Legumes", "Carnes & Peixe", "Padaria", "Bebidas", "Limpeza", "Higiene", "Congelados", "Conservas", "Outros"];
@@ -9,13 +9,16 @@ const STORE_COLORS = {
 const SEED = [
   { name: "Acelga", category: "Frutas & Legumes" }, { name: "Clementinas", category: "Frutas & Legumes" },
   { name: "Cogumelos", category: "Frutas & Legumes" }, { name: "Melão", category: "Frutas & Legumes" },
-  { name: "Pepino", category: "Frutas & Legumes" }, { name: "Pão de forma", category: "Padaria" },
+  { name: "Pepino", category: "Frutas & Legumes" }, { name: "Nectarina", category: "Frutas & Legumes" },
+  { name: "Mandioca", category: "Frutas & Legumes" }, { name: "Pão de forma", category: "Padaria" },
   { name: "Tortilhas", category: "Padaria" }, { name: "Frango (Peito)", category: "Carnes & Peixe" },
   { name: "Frango (Inteiro)", category: "Carnes & Peixe" }, { name: "Frango (Coxas)", category: "Carnes & Peixe" },
-  { name: "Porco (Bifana)", category: "Carnes & Peixe" }, { name: "Misto (Carne Moída)", category: "Carnes & Peixe" },
-  { name: "Boi (Carne Moída)", category: "Carnes & Peixe" }, { name: "Pizza", category: "Congelados" },
+  { name: "Porco (Bifana)", category: "Carnes & Peixe" }, { name: "Porco (Carne Picada)", category: "Carnes & Peixe" },
+  { name: "Misto (Carne Moída)", category: "Carnes & Peixe" }, { name: "Boi (Carne Moída)", category: "Carnes & Peixe" },
+  { name: "Pizza", category: "Congelados" }, { name: "Leite (Meio-gordo)", category: "Lacticínios" },
+  { name: "Manteiga (c/ Sal)", category: "Lacticínios" }, { name: "Fio Dentário", category: "Higiene" },
   { name: "Bolacha água e sal", category: "Conservas" }, { name: "Chá", category: "Conservas" },
-  { name: "Sumo de frutas", category: "Conservas" },
+  { name: "Sumo de frutas", category: "Conservas" }, { name: "Flocos de Milho", category: "Conservas" },
 ];
 
 const storage = {
@@ -59,6 +62,7 @@ export default function App() {
   const [newCategory, setNewCategory] = useState("");
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [logEntry, setLogEntry] = useState({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] });
+  const [editingEntry, setEditingEntry] = useState(null);
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState(null);
   const [filterStore, setFilterStore] = useState("all");
@@ -66,6 +70,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [shopFilterCat, setShopFilterCat] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const itemRefs = useRef({});
 
   const persist = (key, val) => storage.set(key, JSON.stringify(val));
 
@@ -108,6 +114,14 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  useEffect(() => {
+    if (highlightId && itemRefs.current[highlightId]) {
+      setTimeout(() => { itemRefs.current[highlightId]?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 100);
+      const t = setTimeout(() => setHighlightId(null), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [highlightId]);
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   const addItem = () => {
@@ -116,8 +130,11 @@ export default function App() {
     const updated = { ...items, [id]: { id, name: newItem.name.trim(), category: newItem.category } };
     setItems(updated); persist("gt:items", updated);
     showToast(`"${newItem.name.trim()}" adicionado!`);
+    setFilterCat(newItem.category);
+    setHighlightId(id);
     setNewItem({ name: "", category: newItem.category });
     setView("list");
+    setTab("list");
   };
 
   const saveEditItem = () => {
@@ -147,6 +164,20 @@ export default function App() {
     setLogEntry({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] });
     showToast("Preço registado!");
     setView("history");
+  };
+
+  const saveEditEntry = () => {
+    const price = parseFloat(editingEntry.price);
+    if (!editingEntry.price || isNaN(price)) return;
+    const prev = history[selectedItem.id] || [];
+    const updated = prev.map((e, i) => i === editingEntry.idx
+      ? { price, weight: editingEntry.weight.trim(), supermarket: editingEntry.supermarket, date: editingEntry.date }
+      : e
+    );
+    const newHistory = { ...history, [selectedItem.id]: updated };
+    setHistory(newHistory); persist("gt:history", newHistory);
+    setEditingEntry(null);
+    showToast("Entrada atualizada!");
   };
 
   const deleteEntry = (itemId, idx) => {
@@ -227,6 +258,7 @@ export default function App() {
 
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "system-ui", color: "#888" }}>A carregar...</div>;
 
+  // ── EDIT ITEM ──
   if (view === "edit-item" && editItem) return (
     <div style={s.app}>
       <div style={s.header}>
@@ -259,6 +291,7 @@ export default function App() {
     </div>
   );
 
+  // ── HISTORY ──
   if (view === "history" && selectedItem) {
     const h = (history[selectedItem.id] || []).filter(e => filterStore === "all" || e.supermarket === filterStore);
     const cheapest = getCheapest(selectedItem.id);
@@ -284,7 +317,8 @@ export default function App() {
           )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
             {["all", ...SUPERMARKETS].map(st => (
-              <button key={st} onClick={() => setFilterStore(st)} style={{ ...s.btn, padding: "4px 10px", fontSize: 12, background: filterStore === st ? "#2a9d8f" : "#f1f3f5", color: filterStore === st ? "#fff" : "#444" }}>
+              <button key={st} onClick={() => setFilterStore(st)}
+                style={{ ...s.btn, padding: "4px 10px", fontSize: 12, background: filterStore === st ? "#2a9d8f" : "#f1f3f5", color: filterStore === st ? "#fff" : "#444" }}>
                 {st === "all" ? "Todos" : st}
               </button>
             ))}
@@ -292,22 +326,48 @@ export default function App() {
           {h.length === 0
             ? <div style={{ textAlign: "center", color: "#aaa", marginTop: 32 }}>Sem registos{filterStore !== "all" ? ` para ${filterStore}` : ""}.</div>
             : h.map((e, i) => (
-              <div key={i} style={{ ...s.card, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px" }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "#888" }}>{e.date}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
-                    <StoreBadge store={e.supermarket} />
-                    {e.weight && <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>⚖️ {e.weight}</span>}
+              <div key={i} style={{ ...s.card, padding: "10px 14px" }}>
+                {editingEntry?.idx === i ? (
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "#2a9d8f", marginBottom: 8 }}>Editar registo</div>
+                    <label style={s.label}>Preço (€)</label>
+                    <input style={s.input} type="number" step="0.01" min="0" value={editingEntry.price} onChange={ev => setEditingEntry({ ...editingEntry, price: ev.target.value })} autoFocus />
+                    <label style={s.label}>Peso / Quantidade</label>
+                    <input style={s.input} type="text" placeholder="ex: 1kg" value={editingEntry.weight} onChange={ev => setEditingEntry({ ...editingEntry, weight: ev.target.value })} />
+                    <label style={s.label}>Supermercado</label>
+                    <select style={s.input} value={editingEntry.supermarket} onChange={ev => setEditingEntry({ ...editingEntry, supermarket: ev.target.value })}>
+                      {SUPERMARKETS.map(st => <option key={st}>{st}</option>)}
+                    </select>
+                    <label style={s.label}>Data</label>
+                    <input style={s.input} type="date" value={editingEntry.date} onChange={ev => setEditingEntry({ ...editingEntry, date: ev.target.value })} />
+                    <div style={s.row}>
+                      <button style={{ ...s.btn, ...s.btnSecondary, flex: 1 }} onClick={() => setEditingEntry(null)}>Cancelar</button>
+                      <button style={{ ...s.btn, ...s.btnPrimary, flex: 1 }} onClick={saveEditEntry}>Guardar</button>
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontWeight: 700, fontSize: 17 }}>{e.price.toFixed(2)} €</span>
-                  <button onClick={() => setConfirmDelete({ itemId: selectedItem.id, idx: i })} style={{ ...s.btnGhost, color: "#e63946", fontSize: 16 }}>🗑</button>
-                </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#888" }}>{e.date}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                        <StoreBadge store={e.supermarket} />
+                        {e.weight && <span style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>⚖️ {e.weight}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 17 }}>{e.price.toFixed(2)} €</span>
+                      <button onClick={() => setEditingEntry({ idx: i, price: e.price, weight: e.weight || "", supermarket: e.supermarket, date: e.date })}
+                        style={{ ...s.btnGhost, color: "#2a9d8f", fontSize: 15 }} title="Editar">✏️</button>
+                      <button onClick={() => setConfirmDelete({ itemId: selectedItem.id, idx: i })}
+                        style={{ ...s.btnGhost, color: "#e63946", fontSize: 15 }} title="Apagar">🗑</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           }
-          <button style={{ ...s.btn, ...s.btnPrimary, width: "100%", marginTop: 8 }} onClick={() => { setLogEntry({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] }); setView("log-price"); }}>
+          <button style={{ ...s.btn, ...s.btnPrimary, width: "100%", marginTop: 8 }}
+            onClick={() => { setLogEntry({ price: "", weight: "", supermarket: SUPERMARKETS[0], date: new Date().toISOString().split("T")[0] }); setView("log-price"); }}>
             + Registar preço
           </button>
         </div>
@@ -328,6 +388,7 @@ export default function App() {
     );
   }
 
+  // ── LOG PRICE ──
   if (view === "log-price" && selectedItem) return (
     <div style={s.app}>
       <div style={s.header}>
@@ -338,8 +399,8 @@ export default function App() {
       <div style={{ padding: 16 }}>
         <label style={s.label}>Preço (€)</label>
         <input style={s.input} type="number" step="0.01" min="0" placeholder="ex: 1.99" value={logEntry.price} onChange={e => setLogEntry({ ...logEntry, price: e.target.value })} autoFocus />
-        <label style={s.label}>Peso / Quantidade <span style={{ fontWeight: 400, color: "#aaa" }}>(opcional, ex: 500g, 1kg, 6un)</span></label>
-        <input style={s.input} type="text" placeholder="ex: 500g" value={logEntry.weight} onChange={e => setLogEntry({ ...logEntry, weight: e.target.value })} />
+        <label style={s.label}>Peso / Quantidade <span style={{ fontWeight: 400, color: "#aaa" }}>(ex: 1kg, 500g, 1L, 6un)</span></label>
+        <input style={s.input} type="text" placeholder="ex: 1kg" value={logEntry.weight} onChange={e => setLogEntry({ ...logEntry, weight: e.target.value })} />
         <label style={s.label}>Supermercado</label>
         <select style={s.input} value={logEntry.supermarket} onChange={e => setLogEntry({ ...logEntry, supermarket: e.target.value })}>
           {SUPERMARKETS.map(st => <option key={st}>{st}</option>)}
@@ -355,6 +416,7 @@ export default function App() {
     </div>
   );
 
+  // ── ADD ITEM ──
   if (view === "add-item") return (
     <div style={s.app}>
       <div style={s.header}>
@@ -386,6 +448,7 @@ export default function App() {
     </div>
   );
 
+  // ── MAIN ──
   return (
     <div style={s.app}>
       <div style={s.header}>
@@ -418,8 +481,9 @@ export default function App() {
         <div style={{ padding: "0 16px" }}>
           <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 0 2px" }}>
             <button onClick={() => setFilterCat(null)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: !filterCat ? "#2a9d8f" : "#f1f3f5", color: !filterCat ? "#fff" : "#444" }}>Todas</button>
-            {categories.filter(c => filteredItems.some(i => i.category === c)).map(c => (
-              <button key={c} onClick={() => setFilterCat(filterCat === c ? null : c)} style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: filterCat === c ? "#2a9d8f" : "#f1f3f5", color: filterCat === c ? "#fff" : "#444" }}>{c}</button>
+            {categories.filter(c => filteredItems.some(i => i.category === c) || c === filterCat).map(c => (
+              <button key={c} onClick={() => setFilterCat(filterCat === c ? null : c)}
+                style={{ ...s.btn, padding: "4px 12px", fontSize: 12, whiteSpace: "nowrap", background: filterCat === c ? "#2a9d8f" : "#f1f3f5", color: filterCat === c ? "#fff" : "#444" }}>{c}</button>
             ))}
           </div>
           {Object.keys(items).length === 0 ? (
@@ -437,8 +501,10 @@ export default function App() {
                 const last = getLastEntry(item.id);
                 const count = (history[item.id] || []).length;
                 const pinned = !!shoppingList[item.id]?.pinned;
+                const isNew = highlightId === item.id;
                 return (
-                  <div key={item.id} style={{ ...s.card, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div key={item.id} ref={el => itemRefs.current[item.id] = el}
+                    style={{ ...s.card, display: "flex", alignItems: "center", gap: 8, transition: "box-shadow .3s, background .3s", boxShadow: isNew ? "0 0 0 3px #2a9d8f" : "0 1px 4px rgba(0,0,0,0.07)", background: isNew ? "#e9f7f5" : "#fff" }}>
                     <div style={{ flex: 1, cursor: "pointer", minWidth: 0 }} onClick={() => { setSelectedItem(item); setFilterStore("all"); setView("history"); }}>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{item.name}</div>
                       {last ? (
@@ -518,14 +584,9 @@ export default function App() {
                     <div key={item.id} style={{ ...s.card, display: "flex", alignItems: "center", gap: 12, opacity: pinned ? 0.4 : 1 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 15 }}>{item.name}</div>
-                        {last && (
-                          <div style={{ fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                            {last.price.toFixed(2)} € · <StoreBadge store={last.supermarket} />
-                          </div>
-                        )}
+                        {last && <div style={{ fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>{last.price.toFixed(2)} € · <StoreBadge store={last.supermarket} /></div>}
                       </div>
-                      <button onClick={() => togglePinned(item.id)} style={{ ...s.btnGhost, fontSize: 22, color: pinned ? "#2a9d8f" : "#ccc", transition: "color .15s", flexShrink: 0 }}
-                        title={pinned ? "Já na lista" : "Adicionar à lista"}>🛒</button>
+                      <button onClick={() => togglePinned(item.id)} style={{ ...s.btnGhost, fontSize: 22, color: pinned ? "#2a9d8f" : "#ccc", transition: "color .15s", flexShrink: 0 }} title={pinned ? "Já na lista" : "Adicionar à lista"}>🛒</button>
                     </div>
                   );
                 })}

@@ -569,7 +569,7 @@ export default function App() {
           </div>
         </div>
         <style>{`
-          .search-input::placeholder { color: #1a6b5f; font-style: italic; font-weight: 700; opacity: 0.85; font-size: 13px; }
+          .search-input::placeholder { color: #1a6b5f; font-style: italic; opacity: 0.85; font-size: 13px; }
         `}</style>
         <input
           className="search-input"
@@ -607,7 +607,7 @@ export default function App() {
               <path d="M10 34 L15 39 L22 31" fill="none" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
               <line x1="26" y1="35" x2="34" y2="35" stroke={tab === "shopping" ? "#2a9d8f" : "#888"} strokeWidth="2.2" strokeLinecap="round"/>
             </svg>
-            Lista{pinnedItems.length > 0 ? ` (${pinnedItems.length})` : ""}
+            Lista de Compras{pinnedItems.length > 0 ? ` (${pinnedItems.length})` : ""}
           </span>
         </button>
       </div>
